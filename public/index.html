@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mission Control: Build. Launch. Survive.</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#eef3f6;--pn:#fff;--tx:#14252f;--mu:#566b78;--ac:#0b8a76;--wa:#a86a00;--bd:#c93c3c;--ln:#cbd8df;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0d1b26;--pn:#152a39;--tx:#e6eef3;--mu:#8fa7b6;--ac:#3ec6b0;--wa:#f2b84b;--bd:#ff7070;--ln:#27435a}}
+:root[data-theme="dark"]{--bg:#0d1b26;--pn:#152a39;--tx:#e6eef3;--mu:#8fa7b6;--ac:#3ec6b0;--wa:#f2b84b;--bd:#ff7070;--ln:#27435a}
+*{box-sizing:border-box}html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.5 "Bricolage Grotesque",system-ui,sans-serif}
+main{max-width:1000px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:clamp(2rem,6vw,3.4rem);font-weight:800;margin:0;letter-spacing:-.03em;line-height:1}
+h2{font-size:1.1rem;margin:0 0 10px}p{margin:.3em 0}.mu{color:var(--mu);font-size:.9rem}
+.grid{display:grid;grid-template-columns:1fr 300px;gap:16px;margin-top:20px}
+@media(max-width:800px){.grid{grid-template-columns:1fr}}
+.card{background:var(--pn);border:1px solid var(--ln);border-radius:10px;padding:16px;margin-bottom:14px}
+.row{display:grid;grid-template-columns:1fr auto;gap:2px 12px;align-items:center;padding:8px 0;border-top:1px solid var(--ln)}
+.row:first-of-type{border-top:0}.row input[type=range]{grid-column:1/3;width:100%;accent-color:var(--ac)}
+b.v{font-family:ui-monospace,Menlo,monospace}
+.lv{display:flex;gap:8px;flex-wrap:wrap}
+.lv label{flex:1 1 150px;border:1px solid var(--ln);border-radius:8px;padding:10px;cursor:pointer}
+.lv input{accent-color:var(--ac)}.lv label:has(input:checked){border-color:var(--ac);outline:2px solid var(--ac)}
+button{font:inherit;font-weight:600;background:var(--ac);color:#fff;border:0;border-radius:8px;padding:11px 18px;cursor:pointer}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]) button{color:#06231d}}
+button.alt{background:transparent;color:var(--tx);border:1px solid var(--ln)}button:focus-visible,input:focus-visible{outline:3px solid var(--wa);outline-offset:2px}
+button:disabled{opacity:.4;cursor:not-allowed}
+.bad{color:var(--bd)}.ok{color:var(--ac)}.wa{color:var(--wa)}
+.bar{height:9px;background:var(--ln);border-radius:5px;overflow:hidden}.bar i{display:block;height:100%;background:var(--ac);transition:width .4s}
+.tel{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.ev{border:2px solid var(--wa);border-radius:10px;padding:14px;margin:12px 0}
+.ev button{display:block;width:100%;text-align:left;margin-top:8px;background:var(--pn);color:var(--tx);border:1px solid var(--ln)}
+.ev button:hover{border-color:var(--ac)}
+ul.log{padding-left:18px;margin:6px 0;font-size:.92rem}
+.sticky{position:sticky;top:12px;align-self:start}
+</style></head><body><main>
+<h1>Mission Control</h1>
+<p class="mu">Design an Earth-observation satellite, pick a rocket and orbit, then survive 12 months in space.</p>
+<div id="app"></div>
+</main>
+<script>
+const $=id=>document.getElementById(id),clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
+const API=(new URLSearchParams(location.search).get('api')||(location.protocol==='file:'?'http://localhost:3000':'')).replace(/\/$/,'');
+const M={budget:120,req:65,months:12};
+const PARTS=[
+{k:'solar',n:'Solar panels',max:6,mass:15,pw:120,cost:2,note:'+120 W each'},
+{k:'batt',n:'Batteries',max:4,mass:12,pw:0,cost:1.5,note:'+storage for eclipses'},
+{k:'shield',n:'Radiation shielding',max:3,mass:25,pw:0,cost:4,note:'less radiation damage'},
+{k:'fuel',n:'Propellant (kg)',max:150,step:10,mass:1,pw:0,cost:.05,note:'fights atmospheric drag'}];
+const INST=[{k:'cam',n:'Camera',opts:[['None',0,0,0,0],['Basic',20,40,80,10],['High-res',40,120,200,30]]},
+{k:'spec',n:'Spectrometer',opts:[['None',0,0,0,0],['Standard',20,60,90,14]]},
+{k:'ant',n:'Antenna',opts:[['Small',40,10,20,3],['Large',70,30,50,9]]}];
+const LV=[{n:'Micro-L',cap:400,cost:12,rel:.9},{n:'Falcon-S',cap:800,cost:25,rel:.94},{n:'Zenith-2',cap:1100,cost:35,rel:.95},{n:'Atlas-M',cap:1400,cost:45,rel:.97},{n:'Reuse-R',cap:2000,cost:38,rel:.96},{n:'Titan-H',cap:2500,cost:60,rel:.98},{n:'Colossus-X',cap:4000,cost:80,rel:.99}];
+const BUS=[{n:'Micro-sat',mass:90,cost:9,load:70,sci:-6},{n:'Standard bus',mass:150,cost:15,load:100,sci:0},{n:'Heavy bus',mass:260,cost:26,load:140,sci:12}];
+const TANKS=[{n:'Standard tank',max:150,mass:0,cost:0},{n:'Extended tank',max:300,mass:15,cost:3},{n:'Large tank',max:500,mass:35,cost:7},{n:'Deep-range tank',max:800,mass:70,cost:14}];
+let D={solar:2,batt:1,shield:0,fuel:40,cam:1,spec:0,ant:0,lv:1,bus:1,tank:0,alt:600,ss:true,band:0,mod:0,look:{name:'Sentinel-1',body:'gold',panel:'blue'}},S=null;
+const orb=d=>({res:clamp(1.4-d.alt/1500,.5,1.3),cov:clamp(d.alt/1000,.4,1),drag:60*Math.exp(-(d.alt-400)/150),rad:d.alt>900?2.2:d.alt<550?.3:.8});
+function calc(d){
+ const o=orb(d),ins=INST.map(i=>i.opts[d[i.k]]);
+ let mass=BUS[d.bus].mass+TANKS[d.tank].mass+d.solar*15+d.batt*12+d.shield*25+d.fuel+ins.reduce((a,x)=>a+x[2],0)+BANDS[d.band].mass;
+ let cost=BUS[d.bus].cost+TANKS[d.tank].cost+d.solar*2+d.batt*1.5+d.shield*4+d.fuel*.05+ins.reduce((a,x)=>a+x[4],0)+LV[d.lv].cost+BANDS[d.band].cost+MODS[d.mod].cost;
+ const gen=d.solar*120*(d.ss?1.1:1),load=BUS[d.bus].load+ins[0][3]+ins[1][3]+ins[2][3]+BANDS[d.band].pw+MODS[d.mod].pw;
+ const sci=Math.max(0,ins[0][1]+ins[1][1]+BUS[d.bus].sci),LK=link(d),comm=Math.round(clamp(ins[2][1]*.35+65*MODS[d.mod].rf*(LK.margin>=3?1:LK.margin>=0?.8:.4),0,100));
+ return{o,mass,cost,gen,load,sci,comm,ins,cap:LV[d.lv].cap};
+}
+
+const rnd=(a,b)=>a+Math.random()*(b-a);
+const STARS=Array.from({length:170},()=>({x:Math.random()*900,y:Math.random()*320,r:Math.random()*1.5+.3,p:Math.random()*6,c:['#fff','#cfe3ff','#ffe9c8'][Math.floor(Math.random()*3)]}));
+const CANV='<canvas id="scn" width="900" height="400" style="width:100%;border-radius:10px;border:1px solid var(--ln);background:#03060d;display:block;margin-bottom:14px;touch-action:manipulation" aria-label="Live mission view. During defense, click or tap incoming meteoroids."></canvas>';
+let fx={k:'idle'},raf=0,LT=0,A=0,P=[],EARTH=null,G={a:false,rocks:[],laser:null};
+function burst(x,y,n,spd,cols){for(let i=0;i<n;i++){const a=rnd(0,6.28),v=rnd(.15,1)*spd;P.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,l:0,m:rnd(.5,1.3),c:cols[i%cols.length],r:rnd(1.5,4.5)})}}
+function parts(g,dt){g.globalCompositeOperation='lighter';P=P.filter(p=>(p.l+=dt)<p.m);P.forEach(p=>{p.x+=p.vx*dt;p.y+=p.vy*dt;g.globalAlpha=1-p.l/p.m;g.fillStyle=p.c;g.beginPath();g.arc(p.x,p.y,p.r*(1-p.l/p.m*.5),0,7);g.fill()});g.globalAlpha=1;g.globalCompositeOperation='source-over'}
+const FIRE=['#ffb03a','#ffe28a','#ff6a1a','#ff4a1a'];
+
+const BANDS=[{n:'S',f:2.2,g:[3,9],gt:10,mass:5,cost:2,pw:40},{n:'X',f:8.2,g:[11,17],gt:18,mass:8,cost:5,pw:70},{n:'Ka',f:26.5,g:[19,25],gt:24,mass:12,cost:9,pw:110}];
+const MODS=[{n:'BPSK',bits:1,req:9.6,cost:0,pw:0,rf:.55},{n:'QPSK',bits:2,req:9.6,cost:.5,pw:5,rf:.8},{n:'16-QAM',bits:4,req:13.4,cost:1.5,pw:15,rf:1}];
+function link(d){const B=BANDS[d.band],Mo=MODS[d.mod],dk=d.alt*2.2,fspl=20*Math.log10(dk)+20*Math.log10(B.f)+92.45,R=2e6*Mo.bits;
+ const eb=B.g[d.ant]+B.gt-fspl-3+228.6-10*Math.log10(R);return{eb,fspl,margin:eb-Mo.req,rate:2*Mo.bits}}
+function iqDraw(g,W,H,now,mi,mg){
+ g.fillStyle='#06121c';g.fillRect(0,0,W,H);const cx=H/2,cy=H/2,R=H/2-12;
+ g.strokeStyle='rgba(120,190,255,.25)';g.lineWidth=1;g.beginPath();g.moveTo(cx-R,cy);g.lineTo(cx+R,cy);g.moveTo(cx,cy-R);g.lineTo(cx,cy+R);g.stroke();
+ let pts=[];if(mi==0)pts=[[-1,0],[1,0]];else if(mi==1)pts=[[.7,.7],[-.7,.7],[-.7,-.7],[.7,-.7]];else[-3,-1,1,3].forEach(i=>[-3,-1,1,3].forEach(j=>pts.push([i/3.3,j/3.3])));
+ const sg=clamp(.11*Math.pow(10,-mg/15),.03,.6),col=mg>=3?'#3ec6b0':mg>=0?'#f2b84b':'#ff7070';
+ for(let i=0;i<70;i++){const p=pts[Math.floor(Math.random()*pts.length)],nx=(Math.random()+Math.random()+Math.random()-1.5)*sg*1.6,ny=(Math.random()+Math.random()+Math.random()-1.5)*sg*1.6;
+  g.globalAlpha=.7;g.fillStyle=col;g.beginPath();g.arc(cx+(p[0]+nx)*R,cy-(p[1]+ny)*R,1.8,0,7);g.fill()}g.globalAlpha=1;
+ g.strokeStyle='rgba(255,255,255,.55)';pts.forEach(p=>{g.beginPath();g.arc(cx+p[0]*R,cy-p[1]*R,4,0,7);g.stroke()});
+ g.strokeStyle=col;g.lineWidth=1.5;g.beginPath();const x0=H+8;
+ for(let x=x0;x<W-6;x+=2){const s=x-x0+now/18,sym=Math.floor(s/28),p=pts[(sym*7+3)%pts.length],w=s*.45,y=cy-R*.8*(p[0]*Math.cos(w)-p[1]*Math.sin(w))+(Math.random()-.5)*sg*R*.7;x==x0?g.moveTo(x,y):g.lineTo(x,y)}g.stroke();
+ g.fillStyle='#9fc3e6';g.font='11px system-ui';g.fillText(MODS[mi].n+' constellation (I/Q) and carrier',6,12);
+}
+let dl=0;function designLoop(){cancelAnimationFrame(dl);const f=()=>{const c=$('iqv');if(!c)return;iqDraw(c.getContext('2d'),320,110,performance.now(),D.mod,link(D).margin);dl=requestAnimationFrame(f)};f()}
+const TILT=-12*Math.PI/180,CT=Math.cos(TILT),ST=Math.sin(TILT),PW=450,PH=101,SC=2;
+let TEX=null,CL=null,SPH=null,VIS=[];
+const STN=[['NASA DSN Goldstone',35.4,-116.9],['DSN Madrid',40.4,-4.2],['DSN Canberra',-35.4,149],['ESA Kiruna',67.9,20.2],['SvalSat Svalbard',78.2,15.4],['ISRO ISTRAC Bengaluru',13,77.5],['CNES Kourou',5.2,-52.8]];
+const LAND=[
+[-168,66,-156,71,-140,70,-125,70,-95,72,-82,68,-80,62,-93,58,-88,52,-80,52,-78,58,-65,60,-60,55,-55,50,-66,45,-70,42,-76,37,-81,31,-80,25,-83,29,-90,30,-97,27,-97,21,-92,18,-87,21,-88,16,-83,10,-78,8,-80,7,-86,11,-92,15,-105,20,-110,24,-113,31,-117,33,-121,37,-124,42,-124,48,-133,55,-140,60,-152,59,-165,55,-160,60,-166,63],
+[-78,8,-72,12,-62,10,-52,5,-50,0,-35,-6,-39,-14,-41,-22,-48,-26,-53,-34,-58,-38,-65,-41,-66,-47,-69,-52,-72,-54,-75,-48,-73,-38,-71,-30,-70,-18,-76,-14,-81,-5,-80,0],
+[-10,36,-9,43,-2,44,-4,48,2,51,8,54,9,57,5,60,10,64,15,68,25,71,40,68,60,69,70,73,90,76,110,77,130,72,150,71,170,70,180,66,178,62,165,60,160,55,156,51,142,53,140,48,135,43,130,42,127,37,122,40,121,32,120,26,112,22,108,20,106,10,100,13,100,4,104,1,98,8,97,16,92,22,88,22,80,15,77,8,73,17,72,21,67,25,57,25,56,27,50,30,48,29,51,25,56,25,59,22,52,16,43,13,39,21,35,28,35,32,36,36,30,36,27,37,26,41,22,40,19,42,13,45,16,41,18,40,16,38,12,42,9,44,3,43,-1,37,-6,36],
+[-17,21,-13,28,-9,32,-6,36,10,37,11,33,20,31,32,31,33,27,37,20,40,15,43,12,51,12,47,5,40,-3,40,-15,35,-24,32,-29,27,-34,19,-35,15,-27,12,-17,13,-8,9,-1,9,4,-4,5,-13,8,-17,14],
+[114,-22,122,-18,130,-12,137,-12,142,-11,146,-19,153,-26,151,-34,146,-39,140,-38,135,-34,129,-32,115,-34,113,-26],
+[-73,78,-55,82,-25,83,-18,76,-22,70,-42,60,-52,65,-58,75],
+[-180,-70,-120,-73,-60,-64,0,-70,60,-67,120,-66,180,-70,180,-90,-180,-90],
+[-5,50,1,51,-2,56,-5,58,-6,55],[130,31,135,34,141,38,142,44,140,41,136,36],[44,-25,49,-15,50,-13,44,-17],[172,-34,178,-38,174,-41,168,-46,172,-41],
+[95,5,104,-3,106,-6,100,-1],[109,1,117,7,119,1,116,-4,110,-3],[106,-6,114,-8,106,-7],[131,-1,141,-3,150,-10,141,-9,135,-4],[-24,65,-14,66,-14,64,-22,63]];
+function mkEarth(){
+ const c=document.createElement('canvas');c.width=1800;c.height=900;const g=c.getContext('2d');
+ const X=l=>(l+180)/360*1800,Y=a=>(90-a)/180*900;
+ const path=(a,m)=>{if(!m)g.beginPath();g.moveTo(X(a[0]),Y(a[1]));for(let i=2;i<a.length;i+=2)g.lineTo(X(a[i]),Y(a[i+1]));g.closePath()};
+ const oc=g.createLinearGradient(0,0,0,900);oc.addColorStop(0,'#0c4d8a');oc.addColorStop(.5,'#0b62ab');oc.addColorStop(1,'#0c4d8a');g.fillStyle=oc;g.fillRect(0,0,1800,900);
+ for(let i=0;i<900;i++){g.fillStyle=Math.random()<.5?'rgba(0,25,70,.05)':'rgba(60,150,210,.05)';g.beginPath();g.ellipse(rnd(0,1800),rnd(0,900),rnd(20,80),rnd(8,30),0,0,7);g.fill()}
+ g.save();g.shadowColor='#4db2e6';g.shadowBlur=16;g.fillStyle='#3a92c8';LAND.forEach(a=>{path(a);g.fill()});g.restore();
+ const lg=g.createLinearGradient(0,0,0,900);[[0,'#f2f6fa'],[.07,'#dfe5e6'],[.13,'#8b9377'],[.22,'#4c6b3a'],[.32,'#617f3c'],[.38,'#bda067'],[.44,'#8d9a48'],[.5,'#1f5f2a'],[.55,'#8d9a48'],[.61,'#c3a56a'],[.68,'#5a7a3a'],[.78,'#4c6b3a'],[.9,'#dfe5e6'],[1,'#f2f6fa']].forEach(s=>lg.addColorStop(s[0],s[1]));
+ g.fillStyle=lg;LAND.forEach(a=>{path(a);g.fill()});
+ g.save();g.beginPath();LAND.forEach(a=>path(a,1));g.clip();
+ for(let i=0;i<7000;i++){g.fillStyle=Math.random()<.5?'rgba(20,35,15,.10)':'rgba(255,245,220,.08)';g.beginPath();g.ellipse(rnd(0,1800),rnd(0,900),rnd(3,16),rnd(2,8),rnd(0,3),0,7);g.fill()}
+ g.restore();g.strokeStyle='rgba(15,40,25,.4)';g.lineWidth=1;LAND.forEach(a=>{path(a);g.stroke()});g.fillStyle='rgba(240,248,255,.9)';g.fillRect(0,0,1800,14);
+ TEX=new Uint32Array(g.getImageData(0,0,1800,900).data.buffer);
+ const cc=document.createElement('canvas');cc.width=1800;cc.height=900;const h=cc.getContext('2d');
+ for(let i=0;i<260;i++){const lat=[rnd(-12,12),rnd(35,60),rnd(-60,-35),rnd(-70,70)][Math.floor(Math.random()*4)],x=rnd(0,1800),y=Y(lat),r=rnd(30,85),gr=h.createRadialGradient(x,y,0,x,y,r);gr.addColorStop(0,'rgba(255,255,255,.75)');gr.addColorStop(1,'rgba(255,255,255,0)');h.fillStyle=gr;h.beginPath();h.ellipse(x,y,r*1.5,r*.4,rnd(-.4,.4),0,7);h.fill()}
+ const cd=h.getImageData(0,0,1800,900).data;CL=new Uint8Array(1800*900);for(let i=0;i<CL.length;i++)CL[i]=cd[i*4+3];
+ const o=document.createElement('canvas');o.width=PW;o.height=PH;const N=PW*PH;
+ SPH={o,ctx:o.getContext('2d'),id:o.getContext('2d').createImageData(PW,PH),row:new Int32Array(N),u:new Float32Array(N),sh:new Float32Array(N),hz:new Float32Array(N),on:new Uint8Array(N)};
+ const LIGHT=[.55,.5,.67];
+ for(let py=0;py<PH;py++)for(let px=0;px<PW;px++){const i=py*PW+px,x=((px+.5)*SC-450)/400,y=(600-(200+(py+.5)*SC))/400,r2=x*x+y*y;if(r2>=1)continue;
+  const z=Math.sqrt(1-r2),yE=y*CT+z*ST,zE=-y*ST+z*CT,lat=Math.asin(clamp(yE,-1,1)),diff=Math.max(0,x*LIGHT[0]+y*LIGHT[1]+z*LIGHT[2]);
+  SPH.on[i]=1;SPH.row[i]=Math.floor((Math.PI/2-lat)/Math.PI*899);SPH.u[i]=(Math.atan2(x,zE)*180/Math.PI+180)/360*1800;SPH.sh[i]=.16+.95*Math.pow(diff,.75);SPH.hz[i]=Math.pow(1-z,2.6)*(.35+.65*diff)}
+}
+const wrap=v=>((v%1800)+1800)%1800|0;
+function proj(lat,lon,cl){const la=lat*Math.PI/180,lo=(lon-cl)*Math.PI/180,xe=Math.cos(la)*Math.sin(lo),ye=Math.sin(la),ze=Math.cos(la)*Math.cos(lo);return[450+400*xe,600-400*(ye*CT-ze*ST),ye*ST+ze*CT]}
+function earthDraw(g,now){
+ if(!SPH)mkEarth();
+ const cl=-now/1000*4,so=cl/360*1800,co=-now/1000*5.2/360*1800,d=SPH.id.data,N=PW*PH;
+ for(let i=0;i<N;i++){const k=i*4;if(!SPH.on[i]){d[k+3]=0;continue}
+  const row=SPH.row[i]*1800,v=TEX[row+wrap(SPH.u[i]+so)];let r=v&255,gg=(v>>8)&255,b=(v>>16)&255;
+  const ca=CL[row+wrap(SPH.u[i]+co)]/255*.6;r+=(255-r)*ca;gg+=(255-gg)*ca;b+=(255-b)*ca;const s=SPH.sh[i],h=SPH.hz[i];
+  d[k]=Math.min(255,r*s+90*h);d[k+1]=Math.min(255,gg*s+150*h);d[k+2]=Math.min(255,b*s+230*h);d[k+3]=255}
+ SPH.ctx.putImageData(SPH.id,0,0);g.imageSmoothingEnabled=true;g.imageSmoothingQuality='high';g.drawImage(SPH.o,0,200,900,202);
+ g.save();g.strokeStyle='rgba(130,200,255,.7)';g.lineWidth=5;g.shadowBlur=30;g.shadowColor='#4aa8ff';g.beginPath();g.arc(450,600,402,Math.PI*1.2,Math.PI*1.8);g.stroke();g.restore();
+ VIS=[];g.font='11px system-ui';
+ STN.forEach(s=>{const p=proj(s[1],s[2],cl);if(p[2]>.12&&p[1]>206&&p[1]<394){VIS.push({x:p[0],y:p[1],n:s[0]});
+  g.strokeStyle='#fff';g.lineWidth=1.5;g.beginPath();g.arc(p[0],p[1],5,0,7);g.stroke();g.fillStyle='#ff6b5a';g.beginPath();g.arc(p[0],p[1],2.2,0,7);g.fill();
+  g.fillStyle='rgba(255,255,255,.9)';g.shadowColor='#000';g.shadowBlur=4;g.fillText(s[0],p[0]+8,p[1]+4);g.shadowBlur=0}});
+ const mg=g.createRadialGradient(72,52,2,80,60,26);mg.addColorStop(0,'#e9e6df');mg.addColorStop(1,'#77736b');g.fillStyle=mg;g.beginPath();g.arc(80,60,24,0,7);g.fill();
+ g.fillStyle='rgba(90,86,80,.45)';[[72,54,5],[88,68,4],[86,50,3],[74,70,3]].forEach(c=>{g.beginPath();g.arc(c[0],c[1],c[2],0,7);g.fill()});g.fillStyle='rgba(255,255,255,.7)';g.fillText('Moon',68,98);
+ const ix=450+300*Math.cos(now/2100+2),iy=250+40*Math.sin(now/2100+2);g.fillStyle='#cfd5dd';g.fillRect(ix-4,iy-1.5,8,3);g.fillStyle='#3f86f0';g.fillRect(ix-13,iy-2.5,8,5);g.fillRect(ix+5,iy-2.5,8,5);g.fillStyle='rgba(255,255,255,.85)';g.fillText('ISS',ix-8,iy-8);
+}
+function linkDraw(g,sx,sy,now){
+ if(!S||S.mg==null)return;let b=null,bd=1e9;VIS.forEach(v=>{const d=Math.abs(v.x-sx);if(d<bd&&d<330){b=v;bd=d}});if(!b)return;
+ const col=S.mg>=3?'#3ec6b0':S.mg>=0?'#f2b84b':'#ff7070',dx=b.x-sx,dy=b.y-sy,len=Math.hypot(dx,dy),ux=dx/len,uy=dy/len;
+ g.strokeStyle=col;g.lineWidth=1.6;g.globalAlpha=.85;g.beginPath();
+ for(let i=0;i<=len;i+=3){const w=Math.sin(i*.35-now/90)*(S.mg<0?6:3),x=sx+ux*i-uy*w,y=sy+uy*i+ux*w;i?g.lineTo(x,y):g.moveTo(x,y)}g.stroke();g.globalAlpha=1;
+ g.fillStyle=col;g.font='600 12px system-ui';g.fillText(`Downlink to ${b.n}: ${BANDS[D.band].n}-band ${MODS[D.mod].n}, margin ${S.mg>=0?'+':''}${S.mg.toFixed(1)} dB`,16,64);
+}
+const BODY={gold:['#f3d98a','#b98a2c','#e6c463'],silver:['#e8ecf2','#8d97a6','#d7dde6'],white:['#ffffff','#b9c2cf','#f1f4f8'],black:['#4a5260','#14181f','#3a4150']};
+const PAN={blue:['#1b4fa8','#3f86f0','#153f86'],dark:['#25252b','#4a4a58','#1b1b20'],teal:['#0e6b66','#2fc0b3','#0b4f4b']};
+function drawSat(g,x,y,sc,dmg){
+ const n=D.solar,cam=D.cam,ant=D.ant,PN=PAN[D.look.panel],BD=BODY[D.look.body];g.save();g.translate(x,y);g.scale(sc,sc);
+ g.shadowColor='rgba(0,0,0,.5)';g.shadowBlur=8;
+ [-1,1].forEach(sd=>{const cnt=sd<0?Math.ceil(n/2):Math.floor(n/2);for(let i=0;i<cnt;i++){const px=sd<0?-42-i*20:22+i*20;
+  const pg=g.createLinearGradient(px,-14,px+20,14);pg.addColorStop(0,PN[0]);pg.addColorStop(.5,PN[1]);pg.addColorStop(1,PN[2]);
+  g.fillStyle=pg;g.fillRect(px,-14,20,28);if(dmg){g.fillStyle='rgba(0,0,20,.45)';g.fillRect(px,-14,20,28)}g.shadowBlur=0;g.strokeStyle='rgba(190,215,255,.7)';g.lineWidth=.6;g.beginPath();
+  for(let k=1;k<4;k++){g.moveTo(px+k*5,-14);g.lineTo(px+k*5,14)}for(let k=1;k<5;k++){g.moveTo(px,-14+k*5.6);g.lineTo(px+20,-14+k*5.6)}g.stroke();
+  g.fillStyle='rgba(255,255,255,.18)';g.fillRect(px,-14,20,5);g.strokeStyle='#9aa5b5';g.lineWidth=1;g.strokeRect(px,-14,20,28)}});
+ g.shadowBlur=6;const bg=g.createLinearGradient(-16,-16,16,16);bg.addColorStop(0,BD[0]);bg.addColorStop(.5,BD[1]);bg.addColorStop(1,BD[2]);g.fillStyle=bg;g.fillRect(-16,-16,32,32);g.shadowBlur=0;
+ g.strokeStyle='rgba(90,60,10,.5)';g.lineWidth=.7;g.beginPath();g.moveTo(-16,-5);g.lineTo(16,-8);g.moveTo(-16,6);g.lineTo(16,4);g.moveTo(-6,-16);g.lineTo(-4,16);g.stroke();
+ if(cam){g.fillStyle='#161b22';g.beginPath();g.arc(0,20,cam==2?9:6,0,7);g.fill();g.fillStyle='#57b8ff';g.beginPath();g.arc(-1,19,cam==2?4:2.5,0,7);g.fill()}
+ if(D.spec){g.fillStyle='#c9ced6';g.fillRect(-6,-24,12,8);g.fillStyle='#333';g.fillRect(-3,-22,6,3)}
+ g.strokeStyle='#e4e7ec';g.lineWidth=1.5;g.beginPath();g.moveTo(0,-16);g.lineTo(0,-28-ant*8);g.stroke();
+ g.fillStyle='#dfe3ea';g.beginPath();g.arc(0,-28-ant*8,3+ant*3,Math.PI,0);g.fill();g.restore();
+}
+function rocket(g,x,y,t){
+ const bg=g.createLinearGradient(x-8,0,x+8,0);bg.addColorStop(0,'#c9ced6');bg.addColorStop(.45,'#ffffff');bg.addColorStop(1,'#8a93a3');
+ g.fillStyle='#6b7280';g.fillRect(x-15,y+6,7,19);g.fillRect(x+8,y+6,7,19);g.fillStyle='#e5e7eb';g.beginPath();g.moveTo(x-15,y+6);g.lineTo(x-8,y-6);g.lineTo(x-8,y+6);g.fill();g.beginPath();g.moveTo(x+15,y+6);g.lineTo(x+8,y-6);g.lineTo(x+8,y+6);g.fill();
+ g.fillStyle=bg;g.fillRect(x-8,y-26,16,52);g.fillStyle='#1f2937';g.fillRect(x-8,y-6,16,4);g.fillRect(x-8,y+10,16,2);
+ g.fillStyle='#d33';g.beginPath();g.moveTo(x-8,y-26);g.quadraticCurveTo(x,y-58,x+8,y-26);g.fill();
+ g.fillStyle='#374151';g.fillRect(x-5,y+26,10,4);
+}
+function draw(g,now){
+ const dt=Math.min(.05,(now-(LT||now))/1000);LT=now;A+=dt*(G.a?.12:.4);
+ const W=900,H=400;g.fillStyle='#03060d';g.fillRect(0,0,W,H);
+ let n1=g.createRadialGradient(200,80,0,200,80,300);n1.addColorStop(0,'rgba(90,60,160,.22)');n1.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=n1;g.fillRect(0,0,W,H);
+ STARS.forEach(s=>{g.globalAlpha=.35+.45*Math.sin(now/700+s.p);g.fillStyle=s.c;g.fillRect(s.x,s.y,s.r,s.r)});g.globalAlpha=1;
+ const sun=g.createRadialGradient(870,20,0,870,20,180);sun.addColorStop(0,'rgba(255,245,210,.95)');sun.addColorStop(.15,'rgba(255,220,140,.35)');sun.addColorStop(1,'rgba(255,200,100,0)');g.fillStyle=sun;g.fillRect(500,0,400,220);
+ earthDraw(g,now);
+ const t=(now-(fx.t0||now))/1000;
+ if(fx.k==='launch'){
+  const y=175-Math.pow(Math.max(0,t-.8),1.8)*40,fail=fx.fail&&t>2.4;
+  if(t<1.6){g.fillStyle='#4b5563';g.fillRect(418,135,6,66);g.fillRect(418,135,22,4)}
+  if(!fail){rocket(g,450+(t<1.4?(Math.random()-.5)*2.5:0),y,t);
+   if(t>.5)for(let i=0;i<4;i++)P.push({x:450+rnd(-4,4),y:y+30,vx:rnd(-30,30),vy:rnd(90,190),l:0,m:rnd(.3,.8),c:i<2?FIRE[i]:'rgba(210,210,210,.5)',r:rnd(3,8)})}
+  else{if(!fx.b){fx.b=1;burst(450,y,90,280,['#ffb03a','#ffe066','#ff5a2a','#ddd'])}
+   g.fillStyle=`rgba(255,240,200,${Math.max(0,.9-(t-2.4)*3)})`;g.beginPath();g.arc(450,175-Math.pow(1.6,1.8)*40,60,0,7);g.fill()}
+  parts(g,dt);g.fillStyle=fail?'#ff7070':'#f2b84b';g.font='600 18px system-ui';g.fillText(fail?'Launch failure':t<.8?'Ignition':'Liftoff',16,28);return}
+ const ry=60+(D.alt-400)/800*40,cx=450,cy=140;
+ g.strokeStyle='rgba(255,200,80,.3)';g.setLineDash([5,5]);g.lineWidth=1;g.beginPath();g.ellipse(cx,cy,340,ry,0,0,7);g.stroke();g.setLineDash([]);
+ const sx=cx+340*Math.cos(A),sy=cy+ry*Math.sin(A);drawSat(g,sx,sy,.85,S&&S.pm<1);g.fillStyle='rgba(255,255,255,.75)';g.font='12px system-ui';g.textAlign='center';g.fillText(D.look.name,sx,sy+44);g.textAlign='left';
+ linkDraw(g,sx,sy,now);
+ if(G.a)defense(g,dt,now,sx,sy);
+ else if(fx.k!=='idle'){
+  const res=fx.phase==='resolve';
+  if(fx.k==='meteor'){const p=res?.85+.15*Math.min(1,t/.4):Math.min(.85,t/3*.85),mx=sx-300*(1-p),my=sy-260*(1-p);rock(g,mx,my,7,now,-.76,-.65)}
+  if(fx.k==='flare'){const a=.25+.15*Math.sin(t*6),fg=g.createRadialGradient(W,0,10,W,0,460);fg.addColorStop(0,`rgba(255,170,40,${a+.3})`);fg.addColorStop(1,'rgba(255,120,0,0)');g.fillStyle=fg;g.fillRect(0,0,W,H);
+   g.strokeStyle=`rgba(255,200,80,${a})`;g.lineWidth=2;for(let i=0;i<5;i++){g.beginPath();g.moveTo(W,0);g.lineTo(sx+(i-2)*8,sy+(i-2)*6);g.stroke()}}
+  if(fx.k==='comm'){for(let i=0;i<3;i++){const r=(t*40+i*25)%75;g.strokeStyle=`rgba(${res?'80,230,160':'255,90,90'},${1-r/75})`;g.lineWidth=2;g.beginPath();g.arc(sx,sy,r,0,7);g.stroke()}}
+  if(fx.k==='panel'&&!res&&Math.random()<.5)P.push({x:sx+rnd(-45,45),y:sy+rnd(-15,15),vx:rnd(-40,40),vy:rnd(-40,40),l:0,m:.4,c:'#ffe066',r:2});
+  if(res&&(fx.k!=='meteor'||t>.4)){const q=fx.k==='meteor'?t-.4:t;
+   if(fx.hit){if(!fx.b){fx.b=1;burst(sx,sy,60,200,FIRE);g.fillStyle='#fff';g.fillRect(0,0,W,H)}}
+   else{g.strokeStyle=`rgba(90,220,255,${Math.max(0,1-q/1.1)})`;g.lineWidth=4;g.beginPath();g.arc(sx,sy,30+q*50,0,7);g.stroke()}}
+  g.fillStyle=res?(fx.hit?'#ff7070':'#5fe0b0'):'#f2b84b';g.font='600 18px system-ui';g.fillText(res?(fx.hit?'Impact: damage taken':'Threat handled'):'Warning: '+fx.title,16,28)}
+ parts(g,dt);const iq=$('iq');if(iq)iqDraw(iq.getContext('2d'),320,110,now,D.mod,S&&S.mg!=null?S.mg:link(D).margin);
+}
+function rock(g,x,y,r,now,dx,dy){
+ g.save();const tg=g.createLinearGradient(x,y,x-dx*70,y-dy*70);tg.addColorStop(0,'rgba(255,170,70,.9)');tg.addColorStop(1,'rgba(255,90,20,0)');g.strokeStyle=tg;g.lineWidth=r*.9;g.lineCap='round';g.beginPath();g.moveTo(x,y);g.lineTo(x-dx*70,y-dy*70);g.stroke();
+ g.translate(x,y);g.rotate(now/300+r);g.shadowColor='#ff8a30';g.shadowBlur=14;const rg=g.createRadialGradient(-r*.3,-r*.3,1,0,0,r);rg.addColorStop(0,'#d9c3a5');rg.addColorStop(1,'#5a4634');g.fillStyle=rg;
+ g.beginPath();for(let i=0;i<8;i++){const a=i*.785,d=r*(.75+.25*Math.sin(i*2.3+r));g.lineTo(Math.cos(a)*d,Math.sin(a)*d)}g.closePath();g.fill();g.restore();
+}
+function startDefense(e,s){
+ G={a:true,rocks:[],score:0,hits:0,total:0,t0:performance.now(),next:0,dur:10000,laser:null,e,s};fx={k:'defense',t0:G.t0};
+ const c=$('scn');if(c)c.style.cursor='crosshair';hud();
+}
+function hud(){$('sim').innerHTML=tel()+`<div class="ev"><h2>${G.e.t}: you have the controls</h2><p>Click or tap each incoming object to blast it before it reaches the satellite. <b class="v">Destroyed ${G.score}</b> &nbsp; <b class="v ${G.hits?'bad':''}">Hits ${G.hits}</b></p></div>`}
+function defense(g,dt,now,sx,sy){
+ const el=now-G.t0;
+ if(el>G.dur){return endDefense()}
+ if(now>G.next){G.next=now+rnd(420,780);const sd=Math.floor(Math.random()*3);G.rocks.push({x:sd==0?rnd(0,900):sd==1?-10:910,y:sd==0?-10:rnd(0,150),v:rnd(90,150),r:rnd(9,15)});G.total++}
+ G.rocks=G.rocks.filter(r=>{const dx=sx-r.x,dy=sy-r.y,d=Math.hypot(dx,dy);r.ux=dx/d;r.uy=dy/d;r.x+=r.ux*r.v*dt;r.y+=r.uy*r.v*dt;
+  if(d<26){G.hits++;const s=G.s;s.h-=Math.max(3,8-2*s.sh);s.pm*=.96;burst(sx,sy,40,180,FIRE);hud();return false}return true});
+ G.rocks.forEach(r=>rock(g,r.x,r.y,r.r,now,r.ux,r.uy));
+ if(G.laser&&now-G.laser.t<140){const lg=g.createLinearGradient(sx,sy,G.laser.x,G.laser.y);lg.addColorStop(0,'rgba(120,255,220,.95)');lg.addColorStop(1,'rgba(120,255,220,.2)');g.strokeStyle=lg;g.lineWidth=3;g.shadowColor='#7fffd4';g.shadowBlur=12;g.beginPath();g.moveTo(sx,sy);g.lineTo(G.laser.x,G.laser.y);g.stroke();g.shadowBlur=0}
+ g.fillStyle='rgba(255,255,255,.15)';g.fillRect(16,40,200,6);g.fillStyle='#f2b84b';g.fillRect(16,40,200*(1-el/G.dur),6);
+ g.fillStyle='#f2b84b';g.font='600 18px system-ui';g.fillText('DEFEND THE SATELLITE: click the meteoroids',16,28);
+}
+function endDefense(){
+ const s=G.s,e=G.e,msg=`Destroyed ${G.score} of ${G.total}, ${G.hits} hit${G.hits==1?'':'s'} on the satellite.`;
+ G.a=false;G.rocks=[];fx={k:'idle'};const c=$('scn');if(c)c.style.cursor='';
+ s.log.push(`Month ${s.m}, ${e.t}: manual defense. ${msg}`);
+ if(s.h<=0)return end();
+ $('sim').innerHTML=tel()+`<p class="mu">${msg}</p>`;setTimeout(next,1900);
+}
+function startScene(){cancelAnimationFrame(raf);const c=$('scn');
+ c.onpointerdown=ev=>{if(!G.a)return;const b=c.getBoundingClientRect(),x=(ev.clientX-b.left)*900/b.width,y=(ev.clientY-b.top)*400/b.height;
+  let best=null,bd=1e9;G.rocks.forEach(r=>{const d=Math.hypot(r.x-x,r.y-y);if(d<r.r+18&&d<bd){best=r;bd=d}});
+  G.laser={x:best?best.x:x,y:best?best.y:y,t:performance.now()};
+  if(best){G.rocks=G.rocks.filter(r=>r!==best);G.score++;burst(best.x,best.y,26,160,['#ffe28a','#ff9a3a','#fff']);hud()}};
+ const loop=()=>{const c=$('scn');if(!c)return;draw(c.getContext('2d'),performance.now());raf=requestAnimationFrame(loop)};loop()}
+function prevDraw(){const c=$('prev');if(!c)return;const g=c.getContext('2d');g.fillStyle='#03060d';g.fillRect(0,0,280,150);STARS.slice(0,50).forEach(s=>{g.fillStyle=s.c;g.fillRect(s.x%280,s.y%150,s.r,s.r)});drawSat(g,140,85,.9,false)}
+function build(){
+ $('app').innerHTML=`<div class="grid"><div>
+ <div class="card"><h2>Mission brief</h2><p>Earth observation, 12 months. Reach a science score of ${M.req}, stay under $${M.budget}M, and fit your rocket's payload limit.</p></div>
+ <div class="card"><h2>Spacecraft</h2>${PARTS.map(p=>`<div class="row"><span>${p.n} <span class="mu">${p.note}</span></span><b class="v" id="v_${p.k}"></b><input type="range" id="i_${p.k}" min="0" max="${p.k=='fuel'?TANKS[D.tank].max:p.max}" step="${p.step||1}" value="${D[p.k]}"></div>`).join('')}
+ ${INST.map(i=>`<div class="row"><span>${i.n}</span><span></span><div class="lv" style="grid-column:1/3">${i.opts.map((o,j)=>`<label><input type="radio" name="${i.k}" value="${j}" ${D[i.k]==j?'checked':''}> ${o[0]}<br><span class="mu">${o[1]?`+${i.k=='ant'?'comm':'science'} ${o[1]}, `:''}${o[2]} kg, ${o[3]} W, $${o[4]}M</span></label>`).join('')}</div></div>`).join('')}</div>
+ <div class="card"><h2>Spacecraft vehicle</h2><div class="lv">${BUS.map((b,j)=>`<label><input type="radio" name="bus" value="${j}" ${D.bus==j?'checked':''}> ${b.n}<br><span class="mu">${b.mass} kg, ${b.load} W base, $${b.cost}M, science ${b.sci>=0?'+':''}${b.sci}</span></label>`).join('')}</div></div>
+ <div class="card"><h2>Fuel tank</h2><p class="mu">A bigger tank raises the maximum propellant you can load with the slider above. More fuel keeps the orbit stable for longer.</p><div class="lv">${TANKS.map((t,j)=>`<label><input type="radio" name="tank" value="${j}" ${D.tank==j?'checked':''}> ${t.n}<br><span class="mu">holds ${t.max} kg, +${t.mass} kg, $${t.cost}M</span></label>`).join('')}</div></div>
+ <div class="card"><h2>Launch vehicle</h2><div class="lv">${LV.map((l,j)=>`<label><input type="radio" name="lv" value="${j}" ${D.lv==j?'checked':''}> ${l.n}<br><span class="mu">${l.cap} kg, $${l.cost}M, ${+(l.rel*100).toFixed(1)}% reliable</span></label>`).join('')}</div></div>
+ <div class="card"><h2>Radio link and modulation</h2><p class="mu">Higher bands carry more data but fade in rain. Higher-order modulation sends more bits per symbol but needs a stronger signal to stay error-free.</p><div class="lv">${BANDS.map((b,j)=>`<label><input type="radio" name="band" value="${j}" ${D.band==j?'checked':''}> ${b.n}-band<br><span class="mu">${b.f} GHz, ${b.mass} kg, ${b.pw} W, $${b.cost}M</span></label>`).join('')}</div><div class="lv" style="margin-top:8px">${MODS.map((m,j)=>`<label><input type="radio" name="mod" value="${j}" ${D.mod==j?'checked':''}> ${m.n}<br><span class="mu">${m.bits} bit/symbol, needs ${m.req} dB, $${m.cost}M</span></label>`).join('')}</div></div>
+ <div class="card"><h2>Orbit</h2><div class="row"><span>Altitude</span><b class="v" id="v_alt"></b><input type="range" id="i_alt" min="400" max="1200" step="50" value="${D.alt}"></div>
+ <label><input type="checkbox" id="ss" ${D.ss?'checked':''}> Sun-synchronous (98°): steady sunlight, +10% power</label>
+ <svg viewBox="-100 -100 200 200" width="180" height="180" aria-label="Orbit preview"><circle r="40" fill="var(--ac)" opacity=".35"/><circle id="ring" r="60" fill="none" stroke="var(--wa)" stroke-width="1.5" stroke-dasharray="4 3"/><circle id="sat" r="4" fill="var(--wa)" cx="60"/></svg></div>
+ </div><aside class="sticky"><canvas id="prev" width="280" height="150" style="width:100%;border-radius:10px;margin-bottom:14px;background:#050b14" aria-label="Spacecraft preview"></canvas><canvas id="iqv" width="320" height="110" style="width:100%;border-radius:10px;margin-bottom:14px;background:#06121c" aria-label="Radio signal preview"></canvas><div class="card" id="sum"></div><input id="pn" placeholder="Your name (for leaderboard)" maxlength="20" style="width:100%;margin-bottom:8px;padding:10px;border-radius:8px;border:1px solid var(--ln);background:var(--pn);color:var(--tx);font:inherit"><button id="go" style="width:100%">Finalize budget and design</button></aside></div>`;
+ PARTS.forEach(p=>$('i_'+p.k).oninput=e=>{D[p.k]=+e.target.value;upd()});
+ $('i_alt').oninput=e=>{D.alt=+e.target.value;upd()};$('ss').onchange=e=>{D.ss=e.target.checked;upd()};
+ document.querySelectorAll('input[type=radio]').forEach(r=>r.onchange=e=>{D[e.target.name]=+e.target.value;upd()});
+ $('go').onclick=finalize;upd();designLoop();
+}
+function upd(){
+ const fs=$('i_fuel'),tm=TANKS[D.tank].max;fs.max=tm;if(D.fuel>tm)D.fuel=tm;fs.value=D.fuel;prevDraw();const c=calc(D),o=c.o,L=link(D);PARTS.forEach(p=>$('v_'+p.k).textContent=D[p.k]);$('v_alt').textContent=D.alt+' km';
+ $('ring').setAttribute('r',40+(D.alt-400)/800*45);$('sat').setAttribute('cx',40+(D.alt-400)/800*45);
+ const over=c.mass>c.cap,broke=c.cost>M.budget,pw=c.gen<c.load;
+ $('sum').innerHTML=`<h2>Why this matters</h2>
+ <p>Mass <b class="v ${over?'bad':''}">${c.mass} / ${c.cap} kg</b></p>
+ <p>Cost <b class="v ${broke?'bad':''}">$${c.cost.toFixed(1)}M / $${M.budget}M</b></p>
+ <p>Power <b class="v ${pw?'wa':''}">${c.gen.toFixed(0)} W made, ${c.load} W used</b></p>
+ <p>Science potential <b class="v">${c.sci}</b> &nbsp; Comms <b class="v">${c.comm}</b></p><p>Radio <b class="v">${L.rate} Mbps</b>, link margin <b class="v ${L.margin<0?'bad':L.margin<3?'wa':'ok'}">${L.margin>=0?'+':''}${L.margin.toFixed(1)} dB</b></p>${L.margin<0?'<p class="bad">Signal will drop out. Use lower-order modulation, a larger antenna or a different band.</p>':''}${D.band==2?'<p class="mu">Ka-band suffers rain fade: keep 5+ dB of margin.</p>':''}<hr>
+ <p class="mu">At ${D.alt} km: image sharpness ${(o.res*100).toFixed(0)}%, ground coverage ${(o.cov*100).toFixed(0)}%, drag burns about ${o.drag.toFixed(0)} kg of fuel a year${o.rad>2?', and you pass through the radiation belt':''}.</p>
+ ${over?'<p class="bad">Too heavy for this rocket. Remove mass or pick a bigger launcher.</p>':''}${broke?'<p class="bad">Over budget.</p>':''}${pw?'<p class="wa">Instruments will run short of power. Add panels or drop an instrument.</p>':''}`;
+ $('go').disabled=over||broke;
+}
+const EV=[
+{fx:'panel',t:'Solar panel degradation',d:'Solar output dropped 18%.',o:[['Shut down an instrument','Less science, saves power',s=>{s.pm*=.82;s.sm*=.7;s.cut+=80;return'Instrument off. Science down, power stable.'}],['Enter low-power mode','Much less activity, safer',s=>{s.pm*=.82;s.sm*=.6;s.cut+=140;return'Low-power mode holds the battery up.'}],['Continue normally','Risk of battery depletion',s=>{s.pm*=.82;return'Power margin is thinner now.'}]]},
+{fx:'meteor',t:'Micrometeoroid warning',d:'23% chance of panel damage (lower with shielding).',o:[['Take the controls','Blast the meteoroids yourself (skill-based)',s=>'__game'],['Rotate to shield the panels','Costs 5 kg fuel, 8% risk',s=>{s.fuel-=5;return Math.random()<.08?(s.pm*=.8,'Rotation failed to help. Panel hit.'):'Panels protected.'}],['Enter safe mode this month','Lose a month of science, no risk',s=>{s.skip=1;return'Rode it out in safe mode.'}],['Ignore it','Gamble',s=>Math.random()<.23-s.sh*.05?(s.pm*=.7,s.h-=15,'Impact. Panel and hull damaged.'):'Nothing hit.']]},
+{fx:'flare',t:'Solar flare',d:'Radiation spike, with plasma debris.',o:[['Take the controls','Shoot the plasma debris yourself',s=>'__game'],['Safe mode','Skip science this month',s=>{s.skip=1;return'Safe mode absorbed the flare.'}],['Reboot computer after','Costs some battery',s=>{s.b-=15;s.h-=3;return'Minor glitches, recovered.'}],['Carry on','Radiation damage',s=>{s.h-=14-s.sh*3;return'Electronics took a beating.'}]]},
+{fx:'meteor',t:'Debris field',d:'An old rocket stage broke up ahead.',o:[['Take the controls','Shoot the fragments yourself',s=>'__game'],['Fire thrusters to dodge','Costs 15 kg fuel, 10% risk',s=>{s.fuel-=15;return Math.random()<.1?(s.h-=10,'A fragment clipped the hull.'):'Dodged cleanly.'}],['Ignore it','Gamble',s=>Math.random()<.4?(s.pm*=.8,s.h-=12,'Fragments tore into the panels.'):'The debris passed by.']]},
+{fx:'comm',t:'Communications dropout',d:'The downlink is unstable.',o:[['Lower data rate','Science x0.9',s=>{s.sm*=.9;s.cp=-1;return'Link stable at lower rate.'}],['Boost antenna power','Uses 15% battery',s=>{s.b-=15;s.cp=0;return'Link restored.'}],['Wait it out','Lose a month of data',s=>{s.skip=1;return'Data lost this month.'}]]}];
+
+function bpDraw(){
+ const c=$('bp');if(!c)return;const g=c.getContext('2d'),W=900,H=420,cx=450,cy=225,k=3;
+ g.fillStyle='#0a2645';g.fillRect(0,0,W,H);g.strokeStyle='rgba(120,190,255,.13)';g.lineWidth=1;g.beginPath();
+ for(let x=0;x<W;x+=30){g.moveTo(x,0);g.lineTo(x,H)}for(let y=0;y<H;y+=30){g.moveTo(0,y);g.lineTo(W,y)}g.stroke();
+ drawSat(g,cx,cy,k,false);
+ const cc=calc(D),L=[],R=[],n=D.solar,ant=D.ant;
+ if(n)L.push([`Solar array: ${n} panels, ${(cc.gen).toFixed(0)} W`,cx-k*(42+Math.max(0,Math.ceil(n/2)-1)*20+10),cy]);
+ L.push([`Battery bank: ${D.batt} unit(s)`,cx-k*8,cy+k*6]);
+ if(D.shield)L.push([`Radiation shielding: ${D.shield} layer(s)`,cx-k*14,cy-k*10]);
+ R.push([`Antenna: ${ant?'large':'small'} (comm ${cc.comm})`,cx,cy-k*(28+ant*8)-k*3]);
+ if(D.spec)R.push(['Spectrometer',cx,cy-k*20]);
+ if(D.cam)R.push([`Camera: ${INST[0].opts[D.cam][0]}`,cx,cy+k*20]);
+ R.push([`Propellant tank: ${D.fuel} kg`,cx+k*10,cy+k*8]);R.push([`Radio: ${BANDS[D.band].n}-band ${MODS[D.mod].n}, ${link(D).rate} Mbps`,cx+k*3,cy-k*(28+ant*8)-k*6]);
+ g.font='13px system-ui';g.lineWidth=1;
+ [[L,26,'left'],[R,W-26,'right']].forEach(([arr,x,al])=>arr.forEach((a,i)=>{const y=50+i*62;g.strokeStyle='rgba(255,220,120,.8)';g.beginPath();g.moveTo(x+(al=='left'?-4:4),y-5);g.lineTo(a[1],a[2]);g.stroke();g.fillStyle='#ffd777';g.beginPath();g.arc(a[1],a[2],3,0,7);g.fill();g.fillStyle='#e6f2ff';g.textAlign=al;g.fillText(a[0],x,y)}));
+ g.textAlign='center';g.fillStyle='#fff';g.font='600 20px system-ui';g.fillText(D.look.name,W/2,32);g.fillStyle='#9fc3e6';g.font='13px system-ui';g.fillText(`Mass ${cc.mass} kg, launch limit ${cc.cap} kg, ${(D.ss?'sun-synchronous':'inclined')} orbit at ${D.alt} km`,W/2,H-16);g.textAlign='left';
+}
+function finalize(){
+ window.__name=($('pn')&&$('pn').value.trim())||window.__name||'Anonymous';
+ const c=calc(D),ins=c.ins,b=[['Spacecraft bus ('+BUS[D.bus].n+')',BUS[D.bus].cost],['Fuel tank',TANKS[D.tank].cost],['Solar panels',D.solar*2],['Batteries',D.batt*1.5],['Shielding',D.shield*4],['Propellant',D.fuel*.05],['Camera',ins[0][4]],['Spectrometer',ins[1][4]],['Antenna',ins[2][4]],['Radio transmitter',BANDS[D.band].cost+MODS[D.mod].cost],['Launch vehicle',LV[D.lv].cost]].filter(x=>x[1]>0);
+ const tot=c.cost,left=M.budget-tot,over=c.mass>c.cap;
+ const opt=(name,obj,cur)=>Object.keys(obj).map(k=>`<label><input type="radio" name="${name}" value="${k}" ${cur==k?'checked':''}> ${k}</label>`).join('');
+ $('app').innerHTML=`<div class="card"><h2>Finalize budget and spacecraft design</h2><p class="mu">Check your costs and style your spacecraft. Hardware is locked once you launch.</p></div>
+ <div class="grid"><div><canvas id="bp" width="900" height="420" style="width:100%;border-radius:10px;border:1px solid var(--ln);display:block;margin-bottom:14px" aria-label="Spacecraft blueprint"></canvas>
+ <div class="card"><h2>Budget breakdown</h2>${b.map(x=>`<div class="row"><span>${x[0]}</span><b class="v">$${x[1].toFixed(1)}M</b><div class="bar" style="grid-column:1/3"><i style="width:${Math.min(100,x[1]/M.budget*100)}%"></i></div></div>`).join('')}
+ <div class="row"><b>Total</b><b class="v ${left<0?'bad':''}">$${tot.toFixed(1)}M of $${M.budget}M</b></div>
+ <p class="${left<0?'bad':'ok'}">${left<0?'Over budget by $'+(-left).toFixed(1)+'M. Go back and cut costs.':'$'+left.toFixed(1)+'M left over counts toward your budget score.'}</p>${over?'<p class="bad">Spacecraft is too heavy for the launch vehicle.</p>':''}</div></div>
+ <aside class="sticky"><div class="card"><h2>Style your spacecraft</h2><label class="mu" for="sn">Name</label>
+ <input id="sn" value="${D.look.name}" maxlength="18" style="width:100%;margin:4px 0 10px;padding:10px;border-radius:8px;border:1px solid var(--ln);background:var(--pn);color:var(--tx);font:inherit">
+ <p class="mu">Body finish</p><div class="lv">${opt('lb',BODY,D.look.body)}</div><p class="mu">Solar panel type</p><div class="lv">${opt('lp',PAN,D.look.panel)}</div></div>
+ <button id="ap" style="width:100%;margin-bottom:8px" ${left<0||over?'disabled':''}>Approve and launch</button><button id="bk" class="alt" style="width:100%">Back to edit</button></aside></div>`;
+ $('sn').oninput=e=>{D.look.name=e.target.value.trim()||'Sentinel-1';bpDraw()};
+ document.querySelectorAll('input[name=lb]').forEach(r=>r.onchange=e=>{D.look.body=e.target.value;bpDraw()});
+ document.querySelectorAll('input[name=lp]').forEach(r=>r.onchange=e=>{D.look.panel=e.target.value;bpDraw()});
+ $('ap').onclick=launch;$('bk').onclick=build;bpDraw();
+}
+function launch(){
+ window.__name=($('pn')&&$('pn').value.trim())||window.__name||'Anonymous';
+ const c=calc(D),ok=Math.random()<LV[D.lv].rel;
+ if(!ok){$('app').innerHTML=CANV+'<div id="sim"></div>';fx={k:'launch',t0:performance.now(),fail:true};startScene();
+  setTimeout(()=>{$('sim').innerHTML=`<div class="card"><h2 class="bad">Launch failure</h2><p>The ${LV[D.lv].n} failed (it has a ${+(LV[D.lv].rel*100).toFixed(1)}% success rate). The mission is lost, but a redesign is one click away.</p><button id="rd">Redesign</button></div>`;$('rd').onclick=build},4300);
+  return}
+ const pool=[...EV].sort(()=>Math.random()-.5);
+ S={cp:0,mg:null,c,m:0,b:100,fuel:D.fuel,h:100,sci:0,data:0,pm:1,sm:1,cut:0,skip:0,sh:D.shield,ev:{3:pool[0],6:pool[1],9:pool[2]},log:['Launch successful. Orbit reached at '+D.alt+' km.'],pf:1};
+ $('app').innerHTML=CANV+'<div id="sim"><p class="mu">Launching...</p></div>';fx={k:'launch',t0:performance.now()};startScene();setTimeout(()=>{fx={k:'idle'};step()},4300);
+}
+function tel(){
+ const s=S,bar=(n,v)=>`<div><span class="mu">${n}</span> <b class="v">${Math.round(v)}%</b><div class="bar"><i style="width:${clamp(v,0,100)}%;${v<25?'background:var(--bd)':''}"></i></div></div>`;
+ return`<div class="card"><h2>Month ${s.m} of ${M.months}</h2><div class="tel">${bar('Battery',s.b)}${bar('Fuel',D.fuel?s.fuel/D.fuel*100:0)}${bar('Health',s.h)}${bar('Power',s.pf*100)}${bar('Mission',s.m/M.months*100)}<div><span class="mu">Data</span> <b class="v">${s.data.toFixed(0)} GB</b></div></div><canvas id="iq" width="320" height="110" style="width:100%;max-width:420px;margin-top:10px;border-radius:8px;background:#06121c" aria-label="Radio signal: constellation and waveform"></canvas><p class="mu">Radio: ${BANDS[D.band].n}-band ${MODS[D.mod].n}, link margin ${s.mg==null?'-':s.mg.toFixed(1)} dB</p></div>`;
+}
+function step(ev){
+ const s=S;s.m++;const c=s.c,o=c.o;
+ const gen=c.gen*s.pm,load=Math.max(60,c.load-s.cut);s.pf=clamp(gen/load,0,1);
+ s.b=clamp(s.b+(gen-load)/load*12,0,100);
+ let pf=s.pf;if(s.b<=0&&gen<load){s.h-=6;s.log.push(`Month ${s.m}: battery empty, brownout (-6 health).`);pf*=.5}
+ s.fuel-=o.drag/12;if(s.fuel<0){s.fuel=0;s.h-=4;s.log.push(`Month ${s.m}: out of fuel, orbit decaying (-4 health).`)}
+ s.h-=o.rad*(1-.28*s.sh);
+ const LK=link(D),fade=D.band==2?-rnd(0,7):D.band==1?-rnd(0,2):0;s.mg=LK.margin+fade+s.cp;const q=s.mg>=3?1:s.mg>=0?.8:s.mg>-4?.4:.1,cm=(.35*c.ins[2][1]+65*MODS[D.mod].rf)*q;
+ if(s.mg<0)s.log.push(`Month ${s.m}: link margin ${s.mg.toFixed(1)} dB, packets lost (${fade<-3?'rain fade':'weak link'}).`);
+ const gain=s.skip?0:c.sci*s.sm*o.res*(.5+.5*o.cov)*pf*(.6+.4*cm/100)/M.months*1.8;s.skip=0;
+ s.sci+=gain;s.data+=gain*3;
+ if(s.h<=0){return end()}
+ $('sim').innerHTML=tel();
+ if(s.ev[s.m]){const e=s.ev[s.m];if(e.fx==='comm')s.cp=-6;
+  $('sim').innerHTML+=`<div class="ev"><h2>${e.t}</h2><p>${e.d}</p>${e.o.map((x,i)=>`<button data-i="${i}"><b>${x[0]}</b><br><span class="mu">${x[1]}</span></button>`).join('')}</div>`;
+  fx={k:e.fx,phase:'in',t0:performance.now(),title:e.t};
+  document.querySelectorAll('.ev button').forEach(b=>b.onclick=()=>{const x=e.o[b.dataset.i],h0=s.h,p0=s.pm;const r=x[2](s);if(r==='__game')return startDefense(e,s);s.log.push(`Month ${s.m}, ${e.t}: ${x[0]}. ${r}`);s.b=clamp(s.b,0,100);
+   fx={k:e.fx,phase:'resolve',hit:s.h<h0||s.pm<p0-1e-9,t0:performance.now(),title:e.t};
+   $('sim').innerHTML=tel()+`<p class="mu">${r}</p>`;setTimeout(()=>{fx={k:'idle'};next()},1900)});
+ }else setTimeout(next,600);
+}
+function next(){S.m>=M.months?end():step()}
+function end(){
+ const s=S,sc=Math.round(clamp(s.sci,0,100)),h=Math.round(clamp(s.h,0,100)),left=M.budget-s.c.cost;
+ const res=h<=0?'MISSION LOST':sc>=M.req&&h>40?(h>70?'FULL SUCCESS':'SUCCESS, DAMAGED'):sc>=M.req*.6?'PARTIAL SUCCESS':'FAILURE';
+ const o=s.c.o,why=[],LK=link(D);why.push(`Radio: ${BANDS[D.band].n}-band ${MODS[D.mod].n} gave a ${LK.rate} Mbps link with ${LK.margin.toFixed(1)} dB design margin at ${D.alt} km.`);
+ why.push(`Altitude ${D.alt} km gave ${(o.res*100).toFixed(0)}% sharpness and ${(o.cov*100).toFixed(0)}% coverage.`);
+ why.push(`Instruments offered ${s.c.sci} science and comms ${s.c.comm}; the antenna gates how much data gets home.`);
+ why.push(`Radiation cost about ${(o.rad*(1-.28*D.shield)*M.months).toFixed(0)} health over the year with ${D.shield} shield layer(s).`);
+ $('sim').innerHTML=`<div class="card"><h2>${res}</h2>
+ <p>Scientific return <b class="v">${sc} / 100</b> (needed ${M.req}) ${sc>=M.req?'<span class="ok">met</span>':'<span class="bad">missed</span>'}</p>
+ <p>Reliability <b class="v">${h} / 100</b></p><p>Battery reserve <b class="v">${Math.round(s.b)}%</b>, fuel left <b class="v">${s.fuel.toFixed(0)} kg</b></p>
+ <p>Budget left <b class="v">$${left.toFixed(1)}M</b></p></div>
+ <div class="card"><h2>Why?</h2><ul class="log">${why.concat(s.log).map(x=>`<li>${x}</li>`).join('')}</ul></div>
+ <button id="rd">Redesign and relaunch</button>`;
+ $('rd').onclick=build;
+ const box=document.createElement('div');box.id='lb';$('sim').appendChild(box);
+ fetch(API+'/api/results',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:window.__name,science:sc,health:h,cost:+s.c.cost.toFixed(1),mass:s.c.mass,result:res})}).then(lb).catch(lb);
+}
+function lb(){
+ fetch(API+'/api/leaderboard').then(r=>r.json()).then(rows=>{const b=$('lb');if(!b)return;
+  b.innerHTML='<div class="card"><h2>Leaderboard</h2>'+(rows.length?'<ul class="log">'+rows.map(r=>`<li>${r.name}: science ${r.science}, health ${r.health}, $${r.cost}M, ${r.result}</li>`).join('')+'</ul>':'<p class="mu">No results yet.</p>')+'</div>'}).catch(()=>{const b=$('lb');if(b)b.innerHTML='<p class="mu">Leaderboard offline. Start the backend with npm start and open '+(API||location.origin)+' (or add ?api=http://your-server:3000 to the address).</p>'});
+}
+build();
+</script></body></html>
